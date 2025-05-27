@@ -1,0 +1,48 @@
+# Ignorar la carpeta de base de datos
+BD/
+
+# Ignorar la carpeta de archivos temporales de subida
+temp_uploads/
+
+# Ignorar todas las carpetas __pycache__
+__pycache__/
+
+# Ignorar archivos compilados de Python
+*.pyc
+*.pyd
+*.pyo
+
+# Ignorar entornos virtuales (si usas 'venv' como nombre)
+venv/
+.venv/
+
+# Ignorar archivos de registro
+*.log
+logs/
+
+# Ignorar archivos de configuración sensibles (ej. API keys)
+.env
+.flaskenv
+config.ini
+*.json # Cuidado si tienes archivos JSON que SÍ quieras en el repo (ej. configuraciones generales)
+
+# Ignorar archivos específicos del sistema operativo o IDE
+.DS_Store # macOS
+Thumbs.db # Windows
+.vscode/ # VS Code
+.idea/ # PyCharm/IntelliJ
+*.swp # Vim
+*~ # Emacs
+
+# Ignorar archivos generados por Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Ignorar reportes de cobertura de código
+.coverage
+.coverage.*
+htmlcov/
+
+# Ignorar archivos de paquetes y distribuciones
+dist/
+build/
+*.egg-info/
