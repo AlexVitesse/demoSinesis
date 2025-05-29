@@ -3,6 +3,11 @@ streamlit-mic-recorder
 edge-tts
 langchain # Para los módulos de langchain
 langchain-community # Para los módulos de langchain_community
+langchain-chroma
+langchain-huggingface
+langchain_groq
+langchain_huggingface
+pymupdf
 langchain-openai # Para ChatOpenAI (si usas la clase de OpenAI específica)
 fastembed # Para FastEmbedEmbeddings
 pypdf # Para PyMuPDFLoader (solía ser pymupdf, pero pypdf es el paquete)
