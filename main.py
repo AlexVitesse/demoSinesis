@@ -3,6 +3,12 @@ import streamlit as st
 # from ui import BaseUI, SidebarUI, FileUploadUI, DocumentManagerUI, SearchUI
 from ui import UserInterface
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except:
+    pass
+
 # Configuración inicial de la página de Streamlit
 st.set_page_config(
     page_title="Gestor de Base Vectorial",  # Título que se muestra en la pestaña del navegador

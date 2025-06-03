@@ -13,3 +13,4 @@ fastembed # Para FastEmbedEmbeddings
 pypdf # Para PyMuPDFLoader (solía ser pymupdf, pero pypdf es el paquete)
 python-docx # Para Docx2txtLoader
 pandas # Para pd
+python-dotenv

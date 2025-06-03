@@ -4,12 +4,14 @@
 # - typing: Para anotaciones de tipos (List, Dict, Tuple, Optional)
 # - datetime: Para manejo de marcas temporales
 # - streamlit: Framework para interfaces web interactivas
+# - streamlit_pdf_viewer: Para visualización mejorada de PDFs
 # - config: Módulo personalizado con funciones auxiliares
 import os
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime
 import streamlit as st
+from streamlit_pdf_viewer import pdf_viewer
 from config import validate_file, generate_file_hash, get_file_extension
 
 class FileManager:
@@ -19,7 +21,7 @@ class FileManager:
     - Guardar archivos subidos en directorio temporal
     - Limpiar archivos temporales no necesarios
     - Validar y procesar archivos subidos
-    - Mostrar vista previa de documentos
+    - Mostrar vista previa de documentos con soporte mejorado para PDF
     """
     
     def __init__(self):
@@ -159,20 +161,102 @@ class FileManager:
         
         return valid_files, new_file_details
 
+    def _is_pdf_file(self, file_path: str) -> bool:
+        """Verifica si un archivo es PDF basándose en su extensión
+        
+        Args:
+            file_path: Ruta del archivo
+            
+        Returns:
+            bool: True si es archivo PDF, False en caso contrario
+        """
+        return Path(file_path).suffix.lower() == '.pdf'
+
+    def _show_pdf_preview(self, file_path: str, file_name: str) -> None:
+        """Muestra vista previa de archivo PDF usando streamlit-pdf-viewer
+        
+        Args:
+            file_path: Ruta del archivo PDF
+            file_name: Nombre del archivo para mostrar
+        """
+        try:
+            st.info(f"📄 Vista previa de: **{file_name}**")
+            
+            # Configuración básica del visualizador PDF (parámetros compatibles)
+            with open(file_path, "rb") as pdf_file:
+                pdf_data = pdf_file.read()
+                
+            # Usar solo parámetros básicos para máxima compatibilidad
+            pdf_viewer(
+                input=pdf_data,
+                width=700,
+                height=600,
+                key=f"pdf_viewer_{hash(file_name)}"  # Usar hash para evitar caracteres especiales
+            )
+            
+        except Exception as e:
+            st.error(f"Error al mostrar PDF: {str(e)}")
+            # Intentar con parámetros mínimos
+            try:
+                st.warning("Intentando con configuración básica...")
+                with open(file_path, "rb") as pdf_file:
+                    pdf_data = pdf_file.read()
+                pdf_viewer(pdf_data)
+            except Exception as e2:
+                st.error(f"Error con configuración básica: {str(e2)}")
+                # Fallback final a información básica
+                st.warning("Mostrando información básica del archivo:")
+                st.text(f"Archivo: {file_name}")
+                st.text(f"Tipo: PDF")
+                st.text(f"Ubicación: {file_path}")
+                
+                # Mostrar opción de descarga
+                try:
+                    with open(file_path, "rb") as pdf_file:
+                        st.download_button(
+                            label="📥 Descargar PDF",
+                            data=pdf_file.read(),
+                            file_name=file_name,
+                            mime="application/pdf"
+                        )
+                except Exception:
+                    pass
+
+    def _show_text_preview(self, file_path: str, file_name: str) -> None:
+        """Muestra vista previa de archivos de texto
+        
+        Args:
+            file_path: Ruta del archivo
+            file_name: Nombre del archivo para mostrar
+        """
+        try:
+            # Lectura segura del contenido (solo primeros 1000 caracteres)
+            with open(file_path, "r", encoding='utf-8', errors='ignore') as f:
+                content = f.read(1000)
+                if len(content) == 1000:
+                    content += "\n\n... (contenido truncado para previsualización)"
+                st.text_area("Contenido inicial", value=content, height=200)
+        except UnicodeDecodeError:
+            st.warning("No se puede previsualizar el contenido (archivo binario)")
+        except Exception as e:
+            st.error(f"Error al leer el archivo: {str(e)}")
+
     def show_file_preview(self, file_details: List[Dict]) -> None:
-        """Muestra vista previa de los archivos
+        """Muestra vista previa de los archivos con soporte mejorado para PDF
         
         Args:
             file_details: Lista de diccionarios con metadatos de archivos
             
         Flujo:
             1. Muestra selector de archivos
-            2. Lee y muestra contenido inicial del archivo seleccionado
-            3. Maneja diferentes formatos de archivo
+            2. Detecta el tipo de archivo (PDF vs otros)
+            3. Usa el visor apropiado según el tipo
+            4. Maneja diferentes formatos de archivo
             
         Consideraciones:
             - Soporta diferentes estructuras de metadatos
-            - Limita la lectura a 1000 caracteres para eficiencia
+            - Usa streamlit-pdf-viewer para PDFs
+            - Mantiene compatibilidad con archivos de texto
             - Maneja archivos binarios y errores de codificación
         """
         if not file_details:
@@ -193,27 +277,83 @@ class FileManager:
         # Selector de archivos para previsualización
         preview_file = st.selectbox(
             "Selecciona un archivo para previsualizar",
-            file_names
+            file_names,
+            help="Los archivos PDF se mostrarán con un visor interactivo"
         )
         
         # Búsqueda del archivo seleccionado
         selected_file = None
         for f in file_details:
             if ('name' in f and f['name'] == preview_file) or \
-            ('file_name' in f and f['file_name'] == preview_file) or \
-            (Path(f['path']).name == preview_file):
+               ('file_name' in f and f['file_name'] == preview_file) or \
+               (Path(f['path']).name == preview_file):
                 selected_file = f
                 break
         
         if selected_file:
-            try:
-                # Lectura segura del contenido (solo primeros 1000 caracteres)
-                with open(selected_file["path"], "r", encoding='utf-8', errors='ignore') as f:
-                    content = f.read(1000)
-                    st.text_area("Contenido inicial", value=content, height=200)
-            except UnicodeDecodeError:
-                st.warning("No se puede previsualizar el contenido (archivo binario)")
-            except Exception as e:
-                st.error(f"Error al leer el archivo: {str(e)}")
+            file_path = selected_file["path"]
+            
+            # Verificar si el archivo existe
+            if not os.path.exists(file_path):
+                st.error(f"El archivo no se encuentra en la ruta: {file_path}")
+                return
+            
+            # Mostrar información del archivo
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Tipo", selected_file.get('type', 'Desconocido'))
+            with col2:
+                if 'size' in selected_file:
+                    st.metric("Tamaño", selected_file['size'])
+            with col3:
+                if 'upload_time' in selected_file:
+                    st.metric("Subido", selected_file['upload_time'])
+            
+            st.divider()
+            
+            # Mostrar vista previa según el tipo de archivo
+            if self._is_pdf_file(file_path):
+                self._show_pdf_preview(file_path, preview_file)
+            else:
+                st.info(f"📄 Vista previa de: **{preview_file}**")
+                self._show_text_preview(file_path, preview_file)
         else:
             st.warning("No se pudo encontrar el archivo seleccionado")
+
+    def get_pdf_files(self, file_details: List[Dict]) -> List[Dict]:
+        """Retorna solo los archivos PDF de la lista
+        
+        Args:
+            file_details: Lista de diccionarios con metadatos de archivos
+            
+        Returns:
+            List[Dict]: Lista filtrada con solo archivos PDF
+        """
+        return [f for f in file_details if self._is_pdf_file(f.get('path', ''))]
+
+    def show_pdf_gallery(self, file_details: List[Dict]) -> None:
+        """Muestra una galería de todos los archivos PDF
+        
+        Args:
+            file_details: Lista de diccionarios con metadatos de archivos
+        """
+        pdf_files = self.get_pdf_files(file_details)
+        
+        if not pdf_files:
+            st.info("No hay archivos PDF para mostrar en la galería")
+            return
+        
+        st.subheader("🖼️ Galería de PDFs")
+        
+        # Mostrar PDFs in pestañas
+        if len(pdf_files) > 1:
+            tab_names = [Path(f['path']).name for f in pdf_files]
+            tabs = st.tabs(tab_names)
+            
+            for tab, pdf_file in zip(tabs, pdf_files):
+                with tab:
+                    self._show_pdf_preview(pdf_file['path'], Path(pdf_file['path']).name)
+        else:
+            # Solo un PDF, mostrarlo directamente
+            pdf_file = pdf_files[0]
+            self._show_pdf_preview(pdf_file['path'], Path(pdf_file['path']).name)

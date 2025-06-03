@@ -143,6 +143,6 @@ class SidebarManager:
             # Documentos totales (de DocumentDB)
             st.write(f"📄 Documentos: {db_stats.get('total_documents', 0)}")
             # Chunks totales (del almacén vectorial)
-            st.write(f"✂️ Chunks: {stats.get('total_chunks', 0)}")
+            #st.write(f"✂️ Chunks: {stats.get('total_chunks', 0)}")
             # Dimensión de embeddings (del modelo)
-            st.write(f"🧮 Dimensión embeddings: {stats.get('embedding_dim', 0)}")
+            #st.write(f"🧮 Dimensión embeddings: {stats.get('embedding_dim', 0)}")
