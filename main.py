@@ -30,11 +30,20 @@ def main():
         "Búsqueda Semántica": ui.show_search_interface,     # Interfaz para realizar búsquedas inteligentes
         "Chat con Documentos": ui.show_chat_interface,         # Interfaz de chat para interactuar con documentos
     }
-    
+    #Version anterior
     # Mostrar el menú de navegación en la barra lateral
     selected_tab = st.sidebar.radio(
         "Navegación",                    # Etiqueta del menú
-        list(menu_options.keys())       # Opciones del menú
+        list(menu_options.keys()),          # Opciones del menú
+        #Se agrego help para darle informacion al usuario.
+        help="""
+        Selecciona una sección para comenzar:
+        
+        🔹 **Carga**: Subir nuevos documentos
+        🔹 **Gestión**: Administrar documentos existentes  
+        🔹 **Búsqueda**: Encontrar información específica
+        🔹 **Chat**: Interactuar con los documentos
+        """
     )
     
     # Llamar la función correspondiente a la opción seleccionada en el menú
