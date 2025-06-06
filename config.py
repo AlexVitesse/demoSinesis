@@ -21,7 +21,7 @@ def get_file_extension(file_name: str) -> str:
     """Obtiene la extensión del archivo en minúsculas"""
     return Path(file_name).suffix.lower()
 
-def validate_file(file, max_size_mb: int = 10) -> bool:
+def validate_file(file, max_size_mb: int = 100) -> bool:
     """
     Valida el tipo y tamaño del archivo.
 
@@ -35,7 +35,7 @@ def validate_file(file, max_size_mb: int = 10) -> bool:
     Raises:
         ValueError: Si la extensión no es permitida o el tamaño excede el límite.
     """
-    allowed_extensions = ['.pdf', '.docx', '.txt', '.csv']  # Tipos de archivo permitidos
+    allowed_extensions = ['.pdf', '.docx', '.txt']  # Tipos de archivo permitidos
     ext = get_file_extension(file.name)
 
     if ext not in allowed_extensions:

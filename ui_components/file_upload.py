@@ -65,7 +65,7 @@ class FileUploadManager:
         # - Filtra por extensiones permitidas
         # - Almacena temporalmente los archivos en memoria
         uploaded_files = st.file_uploader(
-            "Sube tus documentos (PDF, DOCX, TXT, CSV)",
+            "Sube tus documentos (PDF, DOCX, TXT)",
             type=["pdf", "docx", "txt"],
             accept_multiple_files=True
         )

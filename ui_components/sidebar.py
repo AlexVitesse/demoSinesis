@@ -102,11 +102,12 @@ class SidebarManager:
         self.db.set_state("chroma_dir", "chroma_dir")
         
         # Input para nombre de colección con valor actual o por defecto
-        collection_name = st.text_input(
-            "Nombre de colección", 
-            value=self.db.get_state("collection_name")  # Valor actual o None
-        )
+        #collection_name = st.text_input(
+        #    "Nombre de colección", 
+        #    value=self.db.get_state("collection_name")  # Valor actual o None
+        #)
         # Persistencia del nuevo valor en el estado
+        collection_name = "document_collection"
         self.db.set_state("collection_name", collection_name)
 
     def _show_statistics(self):

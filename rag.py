@@ -220,6 +220,7 @@ class RAGSystem:
             template=prompt_template,
             input_variables=['context', 'question']
         )
+        print(prompt.input_variables)
         
         try:
             return RetrievalQA.from_chain_type(
@@ -252,6 +253,23 @@ class RAGSystem:
         
         try:
             logger.info(f"🤔 Procesando pregunta: {question[:50]}...")
+            #PROBANDO PROMPT:
+            # AGREGAR ESTAS LÍNEAS PARA VER EL PROMPT COMPLETO:
+            # Obtener documentos relevantes primero
+            #relevant_docs = self.retriever.invoke(question)
+            #context = "\n\n".join([doc.page_content for doc in relevant_docs])
+            
+            # Construir el prompt completo manualmente
+            #full_prompt = self.qa_chain.combine_documents_chain.llm_chain.prompt.format(
+            #    context=context,
+            #    question=question
+            #)
+            
+            #print("=" * 80)
+            #print("PROMPT COMPLETO ENVIADO AL LLM:")
+            #print("=" * 80)
+            #print(full_prompt)
+            #print("=" * 80)
             
             # Ejecutar la cadena QA
             response = self.qa_chain.invoke({"query": question})

@@ -56,12 +56,12 @@ class DocumentUI:
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("Total Documentos", stats.get('total_documents', 0))
+        #with col2:
+        #    st.metric("Total Chunks", stats.get('total_chunks', 0))
         with col2:
-            st.metric("Total Chunks", stats.get('total_chunks', 0))
-        with col3:
             pendientes = stats.get('documents_by_status', {}).get('Pendiente', 0)
             st.metric("Pendientes", pendientes)
-        with col4:
+        with col3:
             procesados = stats.get('documents_by_status', {}).get('Procesado', 0)
             st.metric("Procesados", procesados)
     
