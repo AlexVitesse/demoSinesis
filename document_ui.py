@@ -2,6 +2,7 @@ import streamlit as st
 from typing import List, Dict, Optional
 import pandas as pd
 from document_db import DocumentDB
+from vector_store import VectorStoreManager
 
 class DocumentUI:
     def __init__(self, db_path: str = "BD/document_manager.db"):
@@ -152,7 +153,9 @@ class DocumentUI:
                         for doc_name in docs_to_delete:
                             doc_path = doc_options[doc_name]
                             self.db.delete_document(doc_path)
-                        
+                            # También eliminar los chunks procesados asociados DE LA BASE VECTORIAL
+                            #VectorStoreManager.delete_documents(doc_path)
+                            print(docs_to_delete)
                         st.success(f"✅ Se eliminaron {len(docs_to_delete)} documentos correctamente")
                         st.rerun()
                     except Exception as e:

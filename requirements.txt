@@ -15,3 +15,4 @@ python-docx # Para Docx2txtLoader
 pandas # Para pd
 python-dotenv
 streamlit-pdf-viewer
+torch

@@ -214,42 +214,4 @@ class DocumentProcessor:
         self.db.set_state("uploaded_files", uploaded_files_state)
         
         # Persistencia de chunks en base de datos
-        self._save_chunks_to_db(file_paths, processed_docs)
-    
-    def _save_chunks_to_db(self, file_paths: List[str], processed_docs: List):
-        """Guarda los chunks procesados en la base de datos
-        
-        Args:
-            file_paths: Rutas de archivos originales
-            processed_docs: Documentos/chunks procesados
-            
-        Proceso:
-            1. Recupera metadatos del documento original
-            2. Filtra chunks pertenecientes a cada archivo
-            3. Almacena relación documento-chunks
-            
-        Consideraciones:
-            - Manejo de errores por archivo individual
-            - Filtrado eficiente de chunks por fuente
-        """
-        for file_path in file_paths:
-            try:
-                # Recuperación de metadatos del documento original
-                doc_info = self.db.get_document(file_path)
-                if doc_info:
-                    # Filtrado y formateo de chunks asociados
-                    doc_chunks = [
-                        {
-                            'page_content': doc.page_content,
-                            'metadata': doc.metadata
-                        } 
-                        for doc in processed_docs 
-                        if doc.metadata.get('source') == file_path
-                    ]
-                    
-                    # Persistencia si hay chunks válidos
-                    if doc_chunks:
-                        self.db.add_processed_chunks(doc_info['id'], doc_chunks)
-                        
-            except Exception as chunk_error:
-                st.error(f"Error al guardar chunks para {Path(file_path).name}: {str(chunk_error)}")
+        #self._save_chunks_to_db(file_paths, processed_docs)

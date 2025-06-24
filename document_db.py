@@ -28,18 +28,9 @@ class DocumentDB:
                     updated_at TEXT NOT NULL
                 )
             """)
+            #BORRAR TABLA processed_docs si existe
             
-            # Tabla para almacenar los chunks procesados de cada documento
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS processed_docs (
-                    id TEXT PRIMARY KEY,
-                    document_id TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    metadata TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY (document_id) REFERENCES documents (id)
-                )
-            """)
+            
             
             # Tabla para mantener el estado de la aplicación (configuraciones, flags, etc.)
             conn.execute("""
@@ -153,39 +144,10 @@ class DocumentDB:
             if doc_id:
                 doc_id = doc_id[0]
                 # Elimina los chunks asociados
-                conn.execute("DELETE FROM processed_docs WHERE document_id = ?", (doc_id,))
+                #conn.execute("DELETE FROM processed_docs WHERE document_id = ?", (doc_id,))
                 # Elimina el documento
                 conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
     
-    def add_processed_chunks(self, document_id: str, chunks: List[Dict]) -> None:
-        """Añade chunks procesados a la base de datos"""
-        now = datetime.now().isoformat()
-        
-        with self._get_connection() as conn:
-            for chunk in chunks:
-                conn.execute(
-                    """
-                    INSERT INTO processed_docs 
-                    (id, document_id, content, metadata, created_at)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (
-                        str(uuid.uuid4()),  # ID único para el chunk
-                        document_id,
-                        chunk.get('page_content', ''),  # Contenido del chunk
-                        json.dumps(chunk.get('metadata', {})),  # Metadatos del chunk
-                        now
-                    )
-                )
-    
-    def get_processed_chunks(self, document_id: str) -> List[Dict]:
-        """Obtiene los chunks procesados de un documento"""
-        with self._get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT * FROM processed_docs WHERE document_id = ?",
-                (document_id,)
-            )
-            return [self._row_to_dict(row, 'processed_docs') for row in cursor.fetchall()]
     
     def clear_processed_chunks(self) -> None:
         """Elimina todos los chunks procesados"""
@@ -230,16 +192,6 @@ class DocumentDB:
             )
             stats['documents_by_status'] = dict(cursor.fetchall())
             
-            # Total de chunks procesados
-            cursor = conn.execute("SELECT COUNT(*) FROM processed_docs")
-            stats['total_chunks'] = cursor.fetchone()[0]
             
-            # Total de chunks por documento
-            cursor = conn.execute(
-                """SELECT d.file_name, COUNT(p.id) 
-                FROM documents d LEFT JOIN processed_docs p ON d.id = p.document_id 
-                GROUP BY d.id"""
-            )
-            stats['chunks_per_document'] = cursor.fetchall()
         
         return stats
