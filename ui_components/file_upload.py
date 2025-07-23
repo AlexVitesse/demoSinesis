@@ -7,13 +7,14 @@ import streamlit as st
 from typing import List, Dict
 from file_manager import FileManager
 from document_db import DocumentDB
+from youtube_processor import YouTubeProcessor
 
 
 class FileUploadManager:
-    """Maneja la interfaz de carga de archivos
+    """Maneja la interfaz de carga de archivos y videos de YouTube
     
     Responsabilidades principales:
-    - Mostrar interfaz de carga de archivos
+    - Mostrar interfaz de carga de archivos o videos de YouTube
     - Validar y procesar archivos subidos
     - Coordinar con FileManager para manejo físico de archivos
     - Interactuar con DocumentDB para almacenar metadatos
@@ -35,15 +36,29 @@ class FileUploadManager:
         self.db = db  # Almacena referencia a la base de datos
         self.file_manager = file_manager  # Gestor de operaciones con archivos
         self.embed_model = embed_model  # Modelo para generación de embeddings
+        self.youtube_processor = YouTubeProcessor()  # Procesador de YouTube
+        
+        # Inicializar session state para descargas de YouTube
+        if 'downloads' not in st.session_state:
+            st.session_state.downloads = []
+        st.session_state.setdefault('resultado_dialogo', None)
+    
+    @st.dialog("Preview del video")
+    def mostrar_video(self, url: str) -> None:
+        """Muestra el video en un diálogo modal"""
+        st.video(url)
+        st.write("Cierra esta sección para volver.")
+        if st.button("Cerrar", use_container_width=True):
+            st.rerun()
     
     def show_file_upload(self):
-        """Muestra la interfaz para carga de archivos
+        """Muestra la interfaz para carga de archivos o videos de YouTube
         
         Flujo principal:
             1. Configura la interfaz visual
-            2. Limpia archivos temporales previos
-            3. Muestra el widget de carga
-            4. Procesa archivos subidos
+            2. Permite seleccionar entre Documentos o Videos de YouTube
+            3. Muestra la interfaz correspondiente según la selección
+            4. Procesa archivos subidos o videos de YouTube
             5. Muestra vista previa y opciones
             
         Efectos secundarios:
@@ -53,6 +68,20 @@ class FileUploadManager:
         """
         st.title("📤 Carga de Documentos")  # Título principal de la sección
         
+        # Selector de categoría
+        opcion_elegida = st.selectbox(
+            "Selecciona una categoría",
+            ("Documentos", "Videos de Youtube")
+        )
+        
+        # Mostrar interfaz según la opción elegida
+        if opcion_elegida == "Documentos":
+            self._show_documents_upload()
+        else:  # Videos de Youtube
+            self._show_youtube_upload()
+    
+    def _show_documents_upload(self):
+        """Muestra la interfaz para carga de documentos PDF, DOCX, TXT"""
         # Obtiene el estado actual de archivos subidos o inicializa lista vacía
         uploaded_files_state = self.db.get_state("uploaded_files", [])
         
@@ -81,6 +110,184 @@ class FileUploadManager:
             if valid_files:
                 self._show_upload_interface(valid_files, file_details, uploaded_files_state)
     
+    def _show_youtube_upload(self):
+        """Muestra la interfaz para carga de videos de YouTube"""
+        st.subheader("🎬 Cargar video de YouTube")
+        
+        url = st.text_input("Ingresa la URL del video de YouTube:")
+        
+        if url:
+            try:
+                # Obtener información del video
+                info = self.youtube_processor.get_video_info(url)
+                
+                if info:
+                    col1, col2 = st.columns([1, 2])
+                    
+                    with col1:
+                        # Mostrar thumbnail
+                        image_url = info.get('thumbnail')
+                        button_key = "open_video_dialog_button"
+                        
+                        st.markdown(
+                            f"""
+                            <style>#{button_key} {{ display: none; }}</style>
+                            <div onclick="document.getElementById('{button_key}').click()">
+                                <img src="{image_url}" alt="Haz clic para ver el video" style="cursor: pointer; max-width: 100%; height: auto;">
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+                        
+                        if st.button("Abrir Video", key=button_key):
+                            self.mostrar_video(url)
+                        
+                        # Información del video
+                        st.caption(f"🕒 Duración: {self.youtube_processor.format_duration(info.get('duration'))}")
+                        st.caption(f"👀 Vistas: {self.youtube_processor.format_views(info.get('view_count'))}")
+                        st.caption(f"📅 Publicado: {self.youtube_processor.format_date(info.get('upload_date'))}")
+                    
+                    with col2:
+                        # Título y canal
+                        st.subheader(info.get('title', 'Sin título'))
+                        st.caption(f"📺 Canal: {info.get('uploader', 'Desconocido')}")
+                        
+                        # Botón de descarga
+                        # Botón de descarga optimizado
+                        if st.button("Agregar Fuente", key="dl_subs", disabled=not self.embed_model):
+                            try:
+                                # Descargar subtítulos
+                                sub_file = self.youtube_processor.download_subs(url)
+                                if sub_file:
+                                    # Procesar automáticamente sin mensajes intermedios
+                                    self._process_youtube_subtitles(sub_file, info)
+                                else:
+                                    st.error("No se pudieron descargar los subtítulos del video")
+                            except Exception as e:
+                                st.error(f"Error al descargar subtítulos: {str(e)}")
+
+            except Exception as e:
+                st.error(str(e))
+    
+    def _register_youtube_file(self, sub_file: str, video_info: Dict):
+        """Registra el archivo de subtítulos de YouTube en la base de datos
+        
+        Args:
+            sub_file: Ruta del archivo de subtítulos descargado
+            video_info: Información del video de YouTube
+            
+        Returns:
+            Dict: Diccionario con los detalles del archivo registrado
+        """
+        try:
+            # Registrar en la base de datos
+            doc_id = self.db.add_document(
+                sub_file,
+                'txt',  # Tipo de archivo
+                metadata={
+                    'name': f"{video_info.get('title', 'Sin título')}_subtitulos.txt",
+                    'source': 'youtube',
+                    'video_url': video_info.get('webpage_url', ''),
+                    'channel': video_info.get('uploader', 'Desconocido'),
+                    'duration': video_info.get('duration', 0),
+                    'upload_date': video_info.get('upload_date', ''),
+                    'view_count': video_info.get('view_count', 0)
+                }
+            )
+            
+            # Crear detalle del archivo para procesamiento
+            file_detail = {
+                'doc_id': doc_id,
+                'path': sub_file,
+                'name': f"{video_info.get('title', 'Sin título')}_subtitulos.txt",
+                'type': 'txt',
+                'size': 0,  # Se podría calcular el tamaño del archivo
+                'status': 'Procesando',  # Cambiar estado a procesando
+                'source': 'youtube'
+            }
+            
+            # Actualizar estado de archivos subidos
+            uploaded_files_state = self.db.get_state("uploaded_files", [])
+            uploaded_files_state.append(file_detail)
+            self.db.set_state("uploaded_files", uploaded_files_state)
+            
+            return file_detail
+            
+        except Exception as e:
+            st.error(f"Error al registrar el archivo: {str(e)}")
+            return None
+    
+    def _process_youtube_subtitles(self, sub_file: str, video_info: Dict):
+        """Procesa los subtítulos de YouTube usando el mismo flujo que los documentos regulares
+        
+        Args:
+            sub_file: Ruta del archivo de subtítulos descargado
+            video_info: Información del video de YouTube
+        """
+        try:
+            with st.spinner("Procesando subtítulos y agregando a la base de vectores..."):
+                # Registrar en la base de datos
+                doc_id = self.db.add_document(
+                    sub_file,
+                    'txt',
+                    metadata={
+                        'name': f"{video_info.get('title', 'Sin título')}_subtitulos.txt",
+                        'source': 'youtube',
+                        'video_url': video_info.get('webpage_url', ''),
+                        'channel': video_info.get('uploader', 'Desconocido'),
+                        'duration': video_info.get('duration', 0),
+                        'upload_date': video_info.get('upload_date', ''),
+                        'view_count': video_info.get('view_count', 0)
+                    }
+                )
+                
+                # Crear estructura de archivo similar a los documentos subidos
+                file_detail = {
+                    'doc_id': doc_id,
+                    'path': sub_file,
+                    'name': f"{video_info.get('title', 'Sin título')}_subtitulos.txt",
+                    'type': 'txt',
+                    'size': 0,
+                    'status': 'Procesando',
+                    'source': 'youtube'
+                }
+                
+                # Agregar al estado de archivos subidos
+                uploaded_files_state = self.db.get_state("uploaded_files", [])
+                uploaded_files_state.append(file_detail)
+                self.db.set_state("uploaded_files", uploaded_files_state)
+                
+                # Preparar archivos para procesamiento
+                valid_files = [(sub_file, 'txt')]
+                files_to_process = [file_detail]
+                
+                # Procesar directamente sin mostrar interfaz adicional
+                from ui_components.document_processor import DocumentProcessor
+                processor = DocumentProcessor(self.db, self.embed_model)
+                success = processor.process_and_save_files(valid_files, files_to_process)
+                
+                if success:
+                    # Actualizar estado a completado
+                    uploaded_files_state = self.db.get_state("uploaded_files", [])
+                    for file in uploaded_files_state:
+                        if file['path'] == sub_file:
+                            file['status'] = 'Completado'
+                            break
+                    self.db.set_state("uploaded_files", uploaded_files_state)
+                    
+                    # Mostrar UN SOLO mensaje de éxito al final
+                    st.success("✅ Subtítulos procesados y agregados a la base de vectores correctamente")
+                    st.info("💡 Ahora puedes hacer consultas sobre el contenido de este video")
+                else:
+                    st.error("⚠️ Hubo un problema al procesar los subtítulos")
+                        
+        except Exception as e:
+            st.error(f"Error al procesar subtítulos: {str(e)}")
+            # Mostrar error más detallado para debugging
+            st.error(f"Detalles del error: {type(e).__name__}: {e}")
+            import traceback
+            st.code(traceback.format_exc())
+
     def _handle_file_upload(self, uploaded_files, uploaded_files_state):
         """Procesa los archivos subidos
         
@@ -114,7 +321,8 @@ class FileUploadManager:
                     metadata={
                         'name': file['name'],  # Nombre original
                         'size': file['size'],  # Tamaño del archivo
-                        'upload_time': file['upload_time']  # Marca temporal
+                        'upload_time': file['upload_time'],  # Marca temporal
+                        'source': 'upload'  # Fuente del archivo
                     }
                 )
                 file['doc_id'] = doc_id  # Guardar ID asignado

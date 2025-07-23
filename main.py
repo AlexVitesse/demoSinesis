@@ -27,7 +27,7 @@ def main():
     menu_options = {
         "Carga de Documentos": ui.show_file_upload,         # Interfaz para subir documentos
         "Gestión de Documentos": ui.show_document_manager,  # Herramientas para administrar documentos cargados
-        "Búsqueda Semántica": ui.show_search_interface,     # Interfaz para realizar búsquedas inteligentes
+        #"Búsqueda Semántica": ui.show_search_interface,     # Interfaz para realizar búsquedas inteligentes
         "Chat con Documentos": ui.show_chat_interface,         # Interfaz de chat para interactuar con documentos
     }
     #Version anterior
