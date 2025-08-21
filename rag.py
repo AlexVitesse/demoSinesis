@@ -17,8 +17,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Cambio a Ollama para uso local
+from langchain_ollama import ChatOllama
+
 # LangChain imports actualizados
-from langchain_groq import ChatGroq
 from langchain_chroma import Chroma
 from langchain_community.retrievers import BM25Retriever
 from langchain.retrievers import EnsembleRetriever
@@ -40,28 +42,24 @@ class RAGSystem:
     def __init__(self, 
                  collection_name: str = "document_collection",
                  chroma_dir: str = "BD/chroma_db_dir",
-                 #meta-llama/llama-4-maverick-17b-128e-instruct
-                 model_name: str = "meta-llama/llama-4-maverick-17b-128e-instruct",
-                 #model_name: str = "llama3-8b-8192",
-                 temperature: float = 0.8):
+                 model_name: str = "llama3.1:8b",
+                 temperature: float = 0.8,
+                 ollama_base_url: str = "http://localhost:11434"):
         """
         Inicializa el sistema RAG con configuración personalizable.
         
         Args:
             collection_name: Nombre de la colección en ChromaDB
             chroma_dir: Directorio de la base de datos vectorial
-            model_name: Modelo de LLM a utilizar
+            model_name: Modelo de Ollama a utilizar (ej: llama3.2, mistral, codellama)
             temperature: Temperatura para la generación
+            ollama_base_url: URL base de Ollama (por defecto localhost:11434)
         """
         self.collection_name = collection_name
         self.chroma_dir = chroma_dir
         self.model_name = model_name
         self.temperature = temperature
-        
-        # Verificar API key
-        self.groq_api_key = os.getenv("GROQ_API_KEY")
-        if not self.groq_api_key:
-            raise ValueError("GROQ_API_KEY no encontrada en variables de entorno")
+        self.ollama_base_url = ollama_base_url
         
         # Inicializar componentes
         self._init_components()
@@ -70,7 +68,7 @@ class RAGSystem:
         self.total_tokens = 0
         self.total_cost = 0.0
         
-        logger.info(f"✅ Sistema RAG inicializado para colección: '{collection_name}'")
+        logger.info(f"✅ Sistema RAG inicializado para colección: '{collection_name}' con Ollama modelo: {model_name}")
     
     def _init_components(self):
         """Inicializa todos los componentes del sistema RAG."""
@@ -84,21 +82,23 @@ class RAGSystem:
             logger.error(f"Error inicializando componentes: {e}")
             raise
     
-    def _setup_llm(self) -> ChatGroq:
-        """Configura el modelo de lenguaje usando Groq."""
+    def _setup_llm(self) -> ChatOllama:
+        """Configura el modelo de lenguaje usando Ollama local."""
         try:
-            return ChatGroq(
+            return ChatOllama(
                 model=self.model_name,
-                api_key=self.groq_api_key,
+                base_url=self.ollama_base_url,
                 temperature=self.temperature,
                 top_p=0.9,
-                max_tokens=1024,
-                streaming=False
+                num_predict=8192,  # Equivalente a max_output_tokens
+                verbose=True
             )
         except Exception as e:
-            logger.error(f"Error configurando LLM: {e}")
+            logger.error(f"Error configurando LLM Ollama: {e}")
+            logger.error(f"Asegúrate de que Ollama esté corriendo en {self.ollama_base_url}")
+            logger.error(f"Y que el modelo '{self.model_name}' esté disponible (ollama pull {self.model_name})")
             raise
-    
+
     def _setup_embeddings(self) -> HuggingFaceEmbeddings:
         """Configura el modelo de embeddings con optimizaciones."""
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -154,13 +154,13 @@ class RAGSystem:
             raise
     
     def _setup_retriever(self) -> EnsembleRetriever:
-        """Configura el sistema de recuperación híbrida (vectorial + BM25)."""
+        """Configura el sistema de recuperación híbrida (vectorial + BM25) con más chunks."""
         try:
-            # Recuperador vectorial
+            # Recuperador vectorial con doble de chunks
             vector_retriever = self.vectorstore.as_retriever(
                 search_type="similarity_score_threshold",
                 search_kwargs={
-                    "k": 8,
+                    "k": 16, # Aumentado de 8 a 16
                     "score_threshold": 0.3
                 }
             )
@@ -168,25 +168,26 @@ class RAGSystem:
             # Recuperador BM25 (solo si hay documentos)
             if self.docs:
                 bm25_retriever = BM25Retriever.from_texts(self.docs)
-                bm25_retriever.k = 8
+                bm25_retriever.k = 16  # Aumentado de 8 a 16
                 
                 # Ensemble de ambos recuperadores
                 ensemble_retriever = EnsembleRetriever(
                     retrievers=[vector_retriever, bm25_retriever],
                     weights=[0.6, 0.4]  # Más peso al vectorial
                 )
-                logger.info("✅ Recuperador híbrido (Vectorial + BM25) configurado")
+                logger.info("✅ Recuperador híbrido (Vectorial + BM25) configurado con 16 chunks")
             else:
                 ensemble_retriever = vector_retriever
-                logger.info("✅ Recuperador vectorial configurado (BM25 no disponible)")
+                logger.info("✅ Recuperador vectorial configurado con 16 chunks (BM25 no disponible)")
             
             return ensemble_retriever
             
         except Exception as e:
             logger.error(f"Error configurando recuperador: {e}")
-            # Fallback a solo vectorial
-            return self.vectorstore.as_retriever(search_kwargs={"k": 8})
-    
+            # Fallback a solo vectorial con más chunks
+            return self.vectorstore.as_retriever(search_kwargs={"k": 16})
+
+
     def _setup_qa_chain(self) -> RetrievalQA:
         """Configura la cadena de preguntas y respuestas."""
         prompt_template = """Eres un asistente inteligente especializado en analizar y responder preguntas basándote en documentos que han sido cargados previamente.
@@ -234,9 +235,72 @@ class RAGSystem:
             logger.error(f"Error configurando cadena QA: {e}")
             raise
     
+    #Generación de preguntas relacionadas
+    def _generate_related_questions(self, original_question: str) -> List[str]:
+        """
+        Genera preguntas relacionadas para mejorar la recuperación de información.
+        
+        Args:
+            original_question: Pregunta original del usuario
+            
+        Returns:
+            Lista de preguntas relacionadas (incluyendo la original)
+        """
+        prompt_template = """Basándote en la pregunta original, genera exactamente 2 preguntas adicionales relacionadas que podrían ayudar a encontrar información complementaria en los documentos.
+
+    Las preguntas adicionales deben:
+    - Abordar aspectos diferentes pero relacionados con la pregunta original
+    - Ser específicas y útiles para búsqueda de información
+    - Cubrir posibles contextos o enfoques alternativos del tema
+
+    Pregunta original: {question}
+
+    Responde ÚNICAMENTE con las 2 preguntas adicionales, una por línea, sin numeración ni explicaciones adicionales."""
+
+        try:
+            prompt = PromptTemplate(
+                template=prompt_template,
+                input_variables=['question']
+            )
+            
+            response = self.llm.invoke(prompt.format(question=original_question))
+            
+            # Procesar la respuesta para extraer las preguntas
+            related_questions = []
+            if hasattr(response, 'content'):
+                lines = response.content.strip().split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line and not line.startswith('-') and not line.startswith('*'):
+                        # Limpiar numeración si existe
+                        import re
+                        clean_line = re.sub(r'^\d+\.\s*', '', line)
+                        clean_line = re.sub(r'^[•\-\*]\s*', '', clean_line)
+                        if clean_line:
+                            related_questions.append(clean_line)
+            
+            # Limitar a 2 preguntas adicionales máximo
+            related_questions = related_questions[:2]
+            
+            # Devolver la pregunta original más las relacionadas
+            all_questions = [original_question] + related_questions
+            
+            logger.info(f"📝 Generadas {len(all_questions)} preguntas para búsqueda:")
+            for i, q in enumerate(all_questions):
+                logger.info(f"  {i+1}. {q[:60]}...")
+            
+            return all_questions
+            
+        except Exception as e:
+            logger.error(f"Error generando preguntas relacionadas: {e}")
+            # Fallback: devolver solo la pregunta original
+            return [original_question]
+
+
     def ask_question(self, question: str) -> Dict[str, Any]:
         """
         Procesa una pregunta y devuelve una respuesta con fuentes.
+        Utiliza múltiples preguntas relacionadas para mejorar la recuperación.
         
         Args:
             question: Pregunta del usuario
@@ -253,54 +317,74 @@ class RAGSystem:
         
         try:
             logger.info(f"🤔 Procesando pregunta: {question[:50]}...")
-            #PROBANDO PROMPT:
-            # AGREGAR ESTAS LÍNEAS PARA VER EL PROMPT COMPLETO:
-            # Obtener documentos relevantes primero
-            #relevant_docs = self.retriever.invoke(question)
-            #context = "\n\n".join([doc.page_content for doc in relevant_docs])
             
-            # Construir el prompt completo manualmente
-            #full_prompt = self.qa_chain.combine_documents_chain.llm_chain.prompt.format(
-            #    context=context,
-            #    question=question
-            #)
+            # Generar preguntas relacionadas
+            all_questions = self._generate_related_questions(question)
             
-            #print("=" * 80)
-            #print("PROMPT COMPLETO ENVIADO AL LLM:")
-            #print("=" * 80)
-            #print(full_prompt)
-            #print("=" * 80)
+            # Recopilar documentos relevantes de todas las preguntas
+            all_relevant_docs = []
+            seen_content = set()  # Para evitar duplicados
             
-            # Ejecutar la cadena QA
-            response = self.qa_chain.invoke({"query": question})
+            for q in all_questions:
+                try:
+                    docs = self.retriever.invoke(q)
+                    for doc in docs:
+                        # Usar hash del contenido para evitar duplicados
+                        content_hash = hash(doc.page_content)
+                        if content_hash not in seen_content:
+                            seen_content.add(content_hash)
+                            all_relevant_docs.append(doc)
+                except Exception as e:
+                    logger.warning(f"Error recuperando docs para pregunta '{q[:30]}...': {e}")
+                    continue
+            
+            logger.info(f"📚 Recuperados {len(all_relevant_docs)} chunks únicos")
+            
+            # Construir contexto combinado
+            context = "\n\n".join([doc.page_content for doc in all_relevant_docs])
+            
+            # Usar la pregunta original para generar la respuesta
+            full_prompt = self.qa_chain.combine_documents_chain.llm_chain.prompt.format(
+                context=context,
+                question=question  # Solo la pregunta original
+            )
+            
+            # Generar respuesta usando el LLM directamente
+            response_obj = self.llm.invoke(full_prompt)
+            
+            if hasattr(response_obj, 'content'):
+                answer = response_obj.content
+            else:
+                answer = str(response_obj)
             
             # Extraer fuentes únicas
             sources = []
             source_metadata = []
             
-            if 'source_documents' in response and response['source_documents']:
-                for doc in response['source_documents']:
-                    if hasattr(doc, 'metadata') and doc.metadata:
-                        source_name = doc.metadata.get('source', 'Desconocido')
-                        if source_name not in sources:
-                            sources.append(source_name)
-                            source_metadata.append({
-                                'source': source_name,
-                                'document_name': doc.metadata.get('document_name', 'Sin nombre'),
-                                'chunk_number': doc.metadata.get('chunk_number', 0)
-                            })
+            for doc in all_relevant_docs:
+                if hasattr(doc, 'metadata') and doc.metadata:
+                    source_name = doc.metadata.get('source', 'Desconocido')
+                    if source_name not in sources:
+                        sources.append(source_name)
+                        source_metadata.append({
+                            'source': source_name,
+                            'document_name': doc.metadata.get('document_name', 'Sin nombre'),
+                            'chunk_number': doc.metadata.get('chunk_number', 0)
+                        })
             
             result = {
-                "answer": response.get('result', 'No se pudo generar una respuesta.'),
+                "answer": answer,
                 "sources": sources,
                 "metadata": {
                     "total_sources": len(sources),
                     "source_details": source_metadata,
-                    "collection": self.collection_name
+                    "collection": self.collection_name,
+                    "total_chunks_retrieved": len(all_relevant_docs),
+                    "questions_used": len(all_questions)
                 }
             }
             
-            logger.info(f"✅ Respuesta generada con {len(sources)} fuentes")
+            logger.info(f"✅ Respuesta generada con {len(sources)} fuentes y {len(all_relevant_docs)} chunks")
             return result
             
         except Exception as e:
@@ -310,7 +394,7 @@ class RAGSystem:
                 "sources": [],
                 "metadata": {"error": str(e)}
             }
-    
+
     def get_collection_info(self) -> Dict[str, Any]:
         """Devuelve información sobre la colección actual."""
         try:
@@ -320,7 +404,9 @@ class RAGSystem:
                 "total_documents": count,
                 "chroma_directory": self.chroma_dir,
                 "has_bm25": len(self.docs) > 0,
-                "embedding_model": "all-MiniLM-L6-v2"
+                "embedding_model": "all-MiniLM-L6-v2",
+                "llm_model": self.model_name,
+                "ollama_url": self.ollama_base_url
             }
         except Exception as e:
             logger.error(f"Error obteniendo info de colección: {e}")

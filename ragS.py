@@ -9,7 +9,7 @@ from functools import lru_cache
 # Suprimir advertencias
 warnings.filterwarnings("ignore", message=".*torch.classes.*")
 warnings.filterwarnings("ignore", category=UserWarning, module="chromadb")
-id_runpod = os.getenv("RUNPOD_ID", "zowl6kxiuk4v26")  # ID de RunPod, por defecto
+id_runpod = os.getenv("RUNPOD_ID", "y07qycxecsi1ih")  # ID de RunPod, por defecto
 
 # Configurar logging
 logging.basicConfig(
@@ -42,7 +42,7 @@ class RAGSystem:
                  collection_name: str = "document_collection",
                  chroma_dir: str = "BD/chroma_db_dir",
                  # CAMBIOS AQUÍ - configuración para Ollama
-                 model_name: str = "llama3.1:8b",  # Nombre del modelo en Ollama
+                 model_name: str = "gpt-oss:20b",  # Nombre del modelo en Ollama
                  ollama_base_url: str = f"https://{id_runpod}-11434.proxy.runpod.net",  # URL base de RunPod
                  temperature: float = 0.8):
         """
@@ -380,7 +380,7 @@ def ask_question(question: str,
                 collection_name: str = "document_collection",
                 chroma_dir: str = "BD/chroma_db_dir",
                 ollama_base_url: str = f"https://{id_runpod}-11434.proxy.runpod.net",
-                model_name: str = "llama3.1:8b") -> str:
+                model_name: str = "gpt-oss:20b") -> str:
     """
     Función simple para hacer una pregunta y obtener solo la respuesta.
     
@@ -412,7 +412,7 @@ def ask_question_detailed(question: str,
                          collection_name: str = "document_collection", 
                          chroma_dir: str = "BD/chroma_db_dir",
                          ollama_base_url: str = f"https://{id_runpod}-11434.proxy.runpod.net",
-                         model_name: str = "llama3.1:8b") -> Dict[str, Any]:
+                         model_name: str = "gpt-oss:20b") -> Dict[str, Any]:
     """
     Función para obtener respuesta detallada con metadatos y fuentes.
     
