@@ -3,47 +3,118 @@ from typing import List, Dict, Optional, Any, Tuple
 from pathlib import Path
 import uuid
 import json
+import os
 from datetime import datetime
 
 class DocumentDB:
     def __init__(self, db_path: str = "BD/document_manager.db"):
-        # Ruta al archivo de base de datos SQLite
-        self.db_path = db_path
+        # Resuelve la ruta completa y crea directorios si no existen
+        self.db_path = self._resolve_db_path(db_path)
         self._init_db()  # Inicializa las tablas si no existen
+    
+    def _resolve_db_path(self, db_path: str) -> str:
+        """Resuelve la ruta de la base de datos y crea directorios necesarios"""
+        # Convierte a Path para mejor manejo
+        path = Path(db_path)
+        
+        # Si es una ruta relativa, la hace absoluta respecto al directorio actual
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        
+        # Crea el directorio padre si no existe
+        path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Verifica permisos de escritura en el directorio
+        if not os.access(path.parent, os.W_OK):
+            # Si no hay permisos, usa el directorio temporal del usuario
+            fallback_path = Path.home() / ".demoSinesis" / "BD" / "document_manager.db"
+            fallback_path.parent.mkdir(parents=True, exist_ok=True)
+            print(f"⚠️ Sin permisos en {path.parent}, usando ruta alternativa: {fallback_path}")
+            return str(fallback_path)
+        
+        return str(path)
     
     def _init_db(self) -> None:
         """Inicializa la base de datos con las tablas necesarias"""
-        with self._get_connection() as conn:
-            # Tabla para almacenar información básica de los documentos
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS documents (
-                    id TEXT PRIMARY KEY,
-                    path TEXT UNIQUE NOT NULL,
-                    file_name TEXT NOT NULL,
-                    file_type TEXT NOT NULL,
-                    file_size TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    metadata TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-            """)
-            #BORRAR TABLA processed_docs si existe
-            
-            
-            
-            # Tabla para mantener el estado de la aplicación (configuraciones, flags, etc.)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS app_state (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-            """)
+        try:
+            with self._get_connection() as conn:
+                # Tabla para almacenar información básica de los documentos
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS documents (
+                        id TEXT PRIMARY KEY,
+                        path TEXT UNIQUE NOT NULL,
+                        file_name TEXT NOT NULL,
+                        file_type TEXT NOT NULL,
+                        file_size TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        metadata TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                """)
+                
+                # Tabla para mantener el estado de la aplicación (configuraciones, flags, etc.)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS app_state (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                """)
+                
+                # Confirma los cambios
+                conn.commit()
+                print(f"✅ Base de datos inicializada correctamente en: {self.db_path}")
+                
+        except sqlite3.Error as e:
+            print(f"❌ Error al inicializar la base de datos: {e}")
+            raise
     
     def _get_connection(self) -> sqlite3.Connection:
         """Obtiene una conexión a la base de datos"""
-        return sqlite3.connect(self.db_path)
+        try:
+            # Configuraciones adicionales para mejor rendimiento y compatibilidad
+            conn = sqlite3.connect(
+                self.db_path,
+                timeout=30.0,  # Timeout de 30 segundos
+                check_same_thread=False  # Permite usar desde múltiples hilos
+            )
+            # Habilita foreign keys (buena práctica)
+            conn.execute("PRAGMA foreign_keys = ON")
+            return conn
+        except sqlite3.Error as e:
+            print(f"❌ Error al conectar con la base de datos: {e}")
+            print(f"Ruta intentada: {self.db_path}")
+            raise
+    
+    # Método para verificar la conexión
+    def test_connection(self) -> bool:
+        """Prueba la conexión a la base de datos"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = cursor.fetchall()
+                print(f"✅ Conexión exitosa. Tablas encontradas: {[t[0] for t in tables]}")
+                return True
+        except Exception as e:
+            print(f"❌ Error en la conexión: {e}")
+            return False
+    
+    # Método para obtener información del archivo de BD
+    def get_db_info(self) -> Dict:
+        """Obtiene información sobre el archivo de base de datos"""
+        db_file = Path(self.db_path)
+        
+        info = {
+            'path': str(db_file),
+            'exists': db_file.exists(),
+            'size': f"{db_file.stat().st_size / 1024:.2f} KB" if db_file.exists() else "0 KB",
+            'writable': os.access(db_file.parent, os.W_OK),
+            'parent_dir': str(db_file.parent),
+            'parent_exists': db_file.parent.exists()
+        }
+        
+        return info
     
     # Métodos para manejar el estado de la aplicación
     def set_state(self, key: str, value: Any) -> None:
@@ -83,6 +154,10 @@ class DocumentDB:
         """Añade un nuevo documento a la base de datos"""
         doc_id = str(uuid.uuid4())  # Genera un ID único para el documento
         now = datetime.now().isoformat()  # Marca de tiempo actual
+        
+        # Verifica que el archivo existe antes de agregarlo
+        if not Path(file_path).exists():
+            raise FileNotFoundError(f"El archivo {file_path} no existe")
         
         with self._get_connection() as conn:
             conn.execute(
@@ -143,11 +218,8 @@ class DocumentDB:
             
             if doc_id:
                 doc_id = doc_id[0]
-                # Elimina los chunks asociados
-                #conn.execute("DELETE FROM processed_docs WHERE document_id = ?", (doc_id,))
                 # Elimina el documento
                 conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
-    
     
     def clear_processed_chunks(self) -> None:
         """Elimina todos los chunks procesados"""
@@ -191,7 +263,63 @@ class DocumentDB:
                 "SELECT status, COUNT(*) FROM documents GROUP BY status"
             )
             stats['documents_by_status'] = dict(cursor.fetchall())
-            
-            
         
         return stats
+
+
+# Función de utilidad para diagnosticar problemas
+def diagnose_db_issues(db_path: str = "BD/document_manager.db"):
+    """Función para diagnosticar problemas con la base de datos"""
+    print("🔍 Diagnosticando problemas de base de datos...")
+    print("-" * 50)
+    
+    # Información del directorio actual
+    current_dir = Path.cwd()
+    print(f"📁 Directorio actual: {current_dir}")
+    print(f"📝 Permisos de escritura: {os.access(current_dir, os.W_OK)}")
+    
+    # Información de la ruta objetivo
+    target_path = Path(db_path)
+    if not target_path.is_absolute():
+        target_path = current_dir / target_path
+    
+    print(f"🎯 Ruta objetivo: {target_path}")
+    print(f"📁 Directorio padre: {target_path.parent}")
+    print(f"📂 Directorio padre existe: {target_path.parent.exists()}")
+    print(f"✍️  Permisos de escritura en directorio padre: {os.access(target_path.parent, os.W_OK)}")
+    print(f"📄 Archivo existe: {target_path.exists()}")
+    
+    if target_path.exists():
+        print(f"📏 Tamaño del archivo: {target_path.stat().st_size} bytes")
+        print(f"✍️  Permisos de escritura en archivo: {os.access(target_path, os.W_OK)}")
+    
+    # Ruta alternativa
+    fallback_path = Path.home() / ".demoSinesis" / "BD"
+    print(f"🏠 Ruta alternativa: {fallback_path}")
+    print(f"🏠 Home directory: {Path.home()}")
+    
+    print("-" * 50)
+    
+    try:
+        # Intenta crear la base de datos
+        print("🔧 Intentando crear/conectar base de datos...")
+        db = DocumentDB(db_path)
+        print("✅ Base de datos creada/conectada exitosamente!")
+        
+        # Muestra información de la BD
+        info = db.get_db_info()
+        print("📊 Información de la base de datos:")
+        for key, value in info.items():
+            print(f"   {key}: {value}")
+            
+        # Prueba la conexión
+        db.test_connection()
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        print(f"🔧 Tipo de error: {type(e).__name__}")
+
+
+if __name__ == "__main__":
+    # Ejecuta el diagnóstico si se ejecuta directamente
+    diagnose_db_issues()
