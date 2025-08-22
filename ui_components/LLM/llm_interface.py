@@ -5,7 +5,7 @@ from datetime import datetime
 from io import BytesIO
 import edge_tts
 #from ragS import ask_question
-from ragS import ask_question
+from rag import ask_question
 
 
 VOICE = "es-MX-DaliaNeural"

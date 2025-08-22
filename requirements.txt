@@ -16,3 +16,5 @@ pandas # Para pd
 python-dotenv
 streamlit-pdf-viewer
 torch
+sentence-transformers
+yt_dlp
